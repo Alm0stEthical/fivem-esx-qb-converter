@@ -1,5 +1,5 @@
 ![FiveM Converter - ESX to QB-Core and QB-Core to ESX converter tool for FiveM resources](https://github.com/Alm0stEthical/esx-qb-converter/assets/136627966/a223d9a2-dff2-4f80-88f2-1fe1a0f77f68)
-# ESX/QB-Core Converter
+# FiveM ESX/QB-Core Converter
 The ESX/QB-Core Converter is a Python script that helps you convert FiveM resource scripts between the ESX and QB-Core frameworks. It provides an easy-to-use graphical user interface (GUI) built with the `customtkinter` library.
 
 ## Features
