@@ -13,6 +13,10 @@ CLIENT_COMPAT_MARKER = "-- ESX_COMPAT_QB_BANKING_CLIENT"
 SERVER_COMPAT_MARKER = "-- ESX_COMPAT_QB_BANKING_SERVER"
 
 CLIENT_COMPAT_BLOCK = """-- ESX_COMPAT_QB_BANKING_CLIENT
+if GetResourceState('es_extended') ~= 'started' then
+    error('[compat_bridge] es_extended must be started before this resource')
+end
+
 local ESX = exports['es_extended']:getSharedObject()
 
 local function ShowPromptCompat(text)
@@ -99,12 +103,50 @@ QBCore.Functions.Notify = function(message, _)
     end
 end
 
-QBCore.Functions.Progressbar = function(_, _, duration, _, _, _, _, _, onFinish, _)
-    local waitMs = tonumber(duration) or 0
-    SetTimeout(waitMs, function()
-        if onFinish then
-            onFinish()
+QBCore.Functions.Progressbar = function(...)
+    local args = { ... }
+    if type(args[1]) == 'table' and args[2] ~= nil then
+        table.remove(args, 1)
+    end
+
+    local name = args[1]
+    local label = args[2]
+    local duration = tonumber(args[3]) or 0
+    local useWhileDead = args[4] == true
+    local canCancel = args[5] == true
+    local disable = args[6] or {}
+    local anim = args[7]
+    local prop = args[8]
+    local propTwo = args[9]
+    local onFinish = args[10]
+    local onCancel = args[11]
+
+    if GetResourceState('ox_lib') == 'started' and lib and lib.progressBar then
+        local ok = lib.progressBar({
+            duration = duration,
+            label = tostring(label or name or 'Processing'),
+            useWhileDead = useWhileDead,
+            canCancel = canCancel,
+            disable = {
+                move = disable.disableMovement == true,
+                car = disable.disableCarMovement == true,
+                mouse = disable.disableMouse == true,
+                combat = disable.disableCombat == true,
+            },
+            anim = anim,
+            prop = prop,
+            propTwo = propTwo,
+        })
+        if ok then
+            if onFinish then onFinish() end
+        else
+            if onCancel then onCancel() end
         end
+        return
+    end
+
+    SetTimeout(duration, function()
+        if onFinish then onFinish() end
     end)
 end
 
@@ -116,6 +158,10 @@ end)
 """
 
 SERVER_COMPAT_BLOCK = """-- ESX_COMPAT_QB_BANKING_SERVER
+if GetResourceState('es_extended') ~= 'started' then
+    error('[compat_bridge] es_extended must be started before this resource')
+end
+
 local ESX = exports['es_extended']:getSharedObject()
 
 local function GetFrameworkJobsCompat()
@@ -215,11 +261,18 @@ local function GetItemsByNameCompat(source, itemName)
     return nil
 end
 
+local function StripSelfArgs(args)
+    if type(args[1]) == 'table' and args[2] ~= nil then
+        table.remove(args, 1)
+    end
+    return args
+end
+
 local function BuildPlayerDataCompat(xPlayer)
     local job = xPlayer.getJob and xPlayer.getJob() or {}
     local gradeLevel = tonumber(job.grade) or tonumber(job.grade_level) or 0
     local gradeName = job.grade_name or ''
-    local isBoss = gradeName == 'boss' or gradeLevel >= 4
+    local isBoss = job.isboss == true or gradeName == 'boss'
 
     local firstname = ''
     local lastname = ''
@@ -278,7 +331,9 @@ local function WrapPlayerCompat(xPlayer)
     wrapped.PlayerData = BuildPlayerDataCompat(xPlayer)
     wrapped.Functions = {}
 
-    wrapped.Functions.GetMoney = function(_, moneyType)
+    wrapped.Functions.GetMoney = function(...)
+        local args = StripSelfArgs({ ... })
+        local moneyType = args[1]
         local kind = NormalizeMoneyTypeCompat(moneyType)
         if kind == 'money' then
             return GetCashMoneyCompat(xPlayer)
@@ -287,7 +342,10 @@ local function WrapPlayerCompat(xPlayer)
         return account and account.money or 0
     end
 
-    wrapped.Functions.AddMoney = function(_, moneyType, amount, _)
+    wrapped.Functions.AddMoney = function(...)
+        local args = StripSelfArgs({ ... })
+        local moneyType = args[1]
+        local amount = args[2]
         local kind = NormalizeMoneyTypeCompat(moneyType)
         local amt = tonumber(amount) or 0
         if kind == 'money' then
@@ -301,7 +359,10 @@ local function WrapPlayerCompat(xPlayer)
         return true
     end
 
-    wrapped.Functions.RemoveMoney = function(_, moneyType, amount, _)
+    wrapped.Functions.RemoveMoney = function(...)
+        local args = StripSelfArgs({ ... })
+        local moneyType = args[1]
+        local amount = args[2]
         local kind = NormalizeMoneyTypeCompat(moneyType)
         local amt = tonumber(amount) or 0
         if kind == 'money' then
@@ -315,17 +376,27 @@ local function WrapPlayerCompat(xPlayer)
         return true
     end
 
-    wrapped.Functions.AddItem = function(_, itemName, amount, _, info, _)
-        local ok = AddItemCompat(xPlayer.source, itemName, amount, info)
+    wrapped.Functions.AddItem = function(...)
+        local args = StripSelfArgs({ ... })
+        local itemName = args[1]
+        local amount = args[2]
+        local slot = args[3]
+        local info = args[4]
+        local reason = args[5]
+        local ok = AddItemCompat(xPlayer.source, itemName, amount, slot, info, reason)
         wrapped.PlayerData = BuildPlayerDataCompat(xPlayer)
         return ok
     end
 
-    wrapped.Functions.GetItemsByName = function(_, itemName)
+    wrapped.Functions.GetItemsByName = function(...)
+        local args = StripSelfArgs({ ... })
+        local itemName = args[1]
         return GetItemsByNameCompat(xPlayer.source, itemName)
     end
 
-    wrapped.Functions.GetItemByName = function(_, itemName)
+    wrapped.Functions.GetItemByName = function(...)
+        local args = StripSelfArgs({ ... })
+        local itemName = args[1]
         local items = GetItemsByNameCompat(xPlayer.source, itemName)
         if items and items[1] then
             return items[1]
@@ -557,7 +628,21 @@ def _rewrite_fxmanifest_qb_banking(content: str) -> str:
                 inserted_locale = True
                 break
 
-    return "\n".join(out) + ("\n" if content.endswith("\n") else "")
+    rewritten = "\n".join(out) + ("\n" if content.endswith("\n") else "")
+    if "'es_extended'" not in rewritten and '"es_extended"' not in rewritten:
+        rewritten = rewritten.rstrip() + "\n\ndependencies {\n    'es_extended'\n}\n"
+    return rewritten
+
+
+def _rewrite_sql_identifier_width(content: str) -> str:
+    # Keep schema key names compatible with existing SQL queries, but widen identifier storage.
+    content = re.sub(
+        r"(`citizenid`\s+(?:varchar|char)\()\d+(\))",
+        r"\g<1>64\2",
+        content,
+        flags=re.IGNORECASE,
+    )
+    return content
 
 
 def apply_profile_rewrite(
@@ -572,6 +657,9 @@ def apply_profile_rewrite(
     path = relative_path.replace("\\", "/").lower()
     if _is_manifest_file(path):
         return _rewrite_fxmanifest_qb_banking(content)
+
+    if path.endswith(".sql"):
+        return _rewrite_sql_identifier_width(content)
 
     if not path.endswith(".lua"):
         return content

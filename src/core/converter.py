@@ -133,7 +133,15 @@ def process_folder(
             destination_path = destination_root / relative_path
             destination_path.parent.mkdir(parents=True, exist_ok=True)
 
-            if source_path.suffix != ".lua":
+            suffix = source_path.suffix.lower()
+            is_profile_sql = (
+                profile == PROFILE_QB_BANKING_ESX_COMPAT
+                and direction == "QB-Core to ESX"
+                and suffix == ".sql"
+            )
+            is_target_file = suffix == ".lua" or is_profile_sql
+
+            if not is_target_file:
                 try:
                     shutil.copy2(source_path, destination_path)
                 except OSError as exc:
